@@ -76,10 +76,11 @@ class WaymoMetric(KittiMetric):
                  ann_file: str,
                  waymo_bin_file: str,
                  data_root: str,
-                 split: str = 'training',
+                 load_interval: int = 1,
+                 split: str = 'validation',
                  metric: Union[str, List[str]] = 'mAP',
                  pcd_limit_range: List[float] = [-85, -85, -5, 85, 85, 5],
-                 convert_kitti_format: bool = True,
+                 convert_kitti_format: bool = False,
                  prefix: Optional[str] = None,
                  pklfile_prefix: str = None,
                  submission_prefix: str = None,
@@ -100,6 +101,7 @@ class WaymoMetric(KittiMetric):
             self.idx2metainfo = mmengine.load(idx2metainfo)
         else:
             self.idx2metainfo = None
+        self.load_interval = load_interval
 
         super().__init__(
             ann_file=ann_file,
@@ -127,7 +129,7 @@ class WaymoMetric(KittiMetric):
         self.classes = self.dataset_meta['classes']
 
         # load annotations
-        self.data_infos = load(self.ann_file)['data_list']
+        self.data_infos = load(self.ann_file)['data_list'][::self.load_interval]
         assert len(results) == len(self.data_infos), \
             'invalid list length of network outputs'
         # different from kitti, waymo do not need to convert the ann file
@@ -186,6 +188,20 @@ class WaymoMetric(KittiMetric):
             tmp_dir.cleanup()
         return metric_dict
 
+    def generate_gt_bin(self):
+        from tools.dataset_converters.waymo_gtbin_creator\
+            import gt_bin_creator 
+        creator = gt_bin_creator(self.ann_file, 
+                                self.data_root,
+                                self.split,
+                                self.waymo_bin_file,
+                                self.load_interval,
+                                for_cam_only_challenge=True)
+        if self.load_interval == 1:
+            self.waymo_bin_file = creator.create_whole()
+        else:
+            self.waymo_bin_file = creator.create_subset()
+
     def waymo_evaluate(self,
                        pklfile_prefix: str,
                        metric: str = None,
@@ -202,6 +218,7 @@ class WaymoMetric(KittiMetric):
         Returns:
             dict[str, float]: Results of each evaluation metric.
         """
+        self.generate_gt_bin()
 
         import subprocess
 
@@ -259,52 +276,14 @@ class WaymoMetric(KittiMetric):
                 (ap_dict['Vehicle/L2 mAPH'] + ap_dict['Pedestrian/L2 mAPH'] +
                     ap_dict['Cyclist/L2 mAPH']) / 3
         elif metric == 'LET_mAP':
-            eval_str = 'mmdet3d/evaluation/functional/waymo_utils/' + \
-                f'compute_detection_let_metrics_main {pklfile_prefix}.bin ' + \
-                f'{self.waymo_bin_file}'
-
-            print(eval_str)
-            ret_bytes = subprocess.check_output(eval_str, shell=True)
-            ret_texts = ret_bytes.decode('utf-8')
-
-            print_log(ret_texts, logger=logger)
-            ap_dict = {
-                'Vehicle mAPL': 0,
-                'Vehicle mAP': 0,
-                'Vehicle mAPH': 0,
-                'Pedestrian mAPL': 0,
-                'Pedestrian mAP': 0,
-                'Pedestrian mAPH': 0,
-                'Sign mAPL': 0,
-                'Sign mAP': 0,
-                'Sign mAPH': 0,
-                'Cyclist mAPL': 0,
-                'Cyclist mAP': 0,
-                'Cyclist mAPH': 0,
-                'Overall mAPL': 0,
-                'Overall mAP': 0,
-                'Overall mAPH': 0
-            }
-            mAPL_splits = ret_texts.split('mAPL ')
-            mAP_splits = ret_texts.split('mAP ')
-            mAPH_splits = ret_texts.split('mAPH ')
-            for idx, key in enumerate(ap_dict.keys()):
-                split_idx = int(idx / 3) + 1
-                if idx % 3 == 0:  # mAPL
-                    ap_dict[key] = float(mAPL_splits[split_idx].split(']')[0])
-                elif idx % 3 == 1:  # mAP
-                    ap_dict[key] = float(mAP_splits[split_idx].split(']')[0])
-                else:  # mAPH
-                    ap_dict[key] = float(mAPH_splits[split_idx].split(']')[0])
-            ap_dict['Overall mAPL'] = \
-                (ap_dict['Vehicle mAPL'] + ap_dict['Pedestrian mAPL'] +
-                    ap_dict['Cyclist mAPL']) / 3
-            ap_dict['Overall mAP'] = \
-                (ap_dict['Vehicle mAP'] + ap_dict['Pedestrian mAP'] +
-                    ap_dict['Cyclist mAP']) / 3
-            ap_dict['Overall mAPH'] = \
-                (ap_dict['Vehicle mAPH'] + ap_dict['Pedestrian mAPH'] +
-                    ap_dict['Cyclist mAPH']) / 3
+            import shutil
+            from time import time
+            from .waymo_let_metric import compute_waymo_let_metric
+            _ = time()
+            shutil.copy(f'{pklfile_prefix}.bin', 'results/result_{}.bin'.format(_))
+            print('save output bin to results/result_{}.bin'.format(_))
+            ap_dict = compute_waymo_let_metric(self.waymo_bin_file, pklfile_prefix+'.bin')
+            print('time usage of compute_let_metric: {} s'.format(time()-_))
         return ap_dict
 
     def format_results(self,
@@ -352,6 +331,9 @@ class WaymoMetric(KittiMetric):
 
         waymo_root = self.data_root
         if self.split == 'training':
+            waymo_tfrecords_dir = osp.join(waymo_root, 'training')
+            prefix = '0'
+        elif self.split == 'validation':
             waymo_tfrecords_dir = osp.join(waymo_root, 'validation')
             prefix = '1'
         elif self.split == 'testing':
@@ -371,7 +353,8 @@ class WaymoMetric(KittiMetric):
             classes,
             file_client_args=self.file_client_args,
             from_kitti_format=self.convert_kitti_format,
-            idx2metainfo=self.idx2metainfo)
+            idx2metainfo=self.idx2metainfo,
+            ann_file = self.ann_file)
         converter.convert()
         waymo_save_tmp_dir.cleanup()
 

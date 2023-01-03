@@ -10,8 +10,9 @@ except ImportError:
                       '>1.4.5 to install the official devkit first.')
 
 from glob import glob
-from os.path import join
+from os.path import join, exists
 
+import os
 import mmengine
 import numpy as np
 import tensorflow as tf
@@ -132,9 +133,8 @@ class Waymo2KITTI(object):
 
             self.save_image(frame, file_idx, frame_idx)
             self.save_calib(frame, file_idx, frame_idx)
-            if 'testing_3d_camera_only_detection' not in self.load_dir:
-                # the camera only split doesn't contain lidar points.
-                self.save_lidar(frame, file_idx, frame_idx)
+            # the camera only split doesn't contain lidar points.
+            self.save_lidar(frame, file_idx, frame_idx)
             self.save_pose(frame, file_idx, frame_idx)
             self.save_timestamp(frame, file_idx, frame_idx)
 
@@ -229,7 +229,8 @@ class Waymo2KITTI(object):
         """
         range_images, camera_projections, seg_labels, range_image_top_pose = \
             parse_range_image_and_camera_projection(frame)
-
+        if range_image_top_pose == None :
+            return 
         # First return
         points_0, cp_points_0, intensity_0, elongation_0, mask_indices_0 = \
             self.convert_range_image_to_point_cloud(
@@ -601,3 +602,29 @@ class Waymo2KITTI(object):
         else:
             raise ValueError(mat.shape)
         return ret
+
+def create_ImageSets_img_ids(root_dir, splits):
+    save_dir = join(root_dir, 'ImageSets/')
+    if not exists(save_dir): 
+        os.mkdir(save_dir)
+
+    idx_all = [[] for i in splits]
+    for i, split in enumerate(splits):
+        path = join(root_dir, splits[i], 'calib')
+        if not exists(path):
+            RawNames = []
+        else:
+            RawNames = os.listdir(path)
+
+        for name in RawNames:
+            if name.endswith('.txt'):
+                idx = name.replace('.txt', '\n')
+                idx_all[int(idx[0])].append(idx)
+        idx_all[i].sort()
+    
+    open(save_dir+'train.txt','w').writelines(idx_all[0])
+    open(save_dir+'val.txt','w').writelines(idx_all[1])
+    open(save_dir+'trainval.txt','w').writelines(idx_all[0]+idx_all[1])
+    open(save_dir+'test.txt','w').writelines(idx_all[2])
+    # open(save_dir+'test_cam_only.txt','w').writelines(idx_all[3])
+    print('created txt files indicating what to collect in ', splits)
