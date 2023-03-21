@@ -3,7 +3,7 @@ _base_ = [
     'mmdet3d::_base_/default_runtime.py'
 ]
 
-custom_imports = dict(imports=['projects.detr3d.detr3d'])
+custom_imports = dict(imports=['projects.DETR3D.detr3d'])
 # If point cloud range is changed, the models should also change their point
 # cloud range accordingly
 point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
@@ -128,9 +128,13 @@ test_transforms = [
 ]
 train_transforms = [dict(type='PhotoMetricDistortion3D')] + test_transforms
 
-file_client_args = dict(backend='disk')
+backend_args = None
 train_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles', to_float32=True, num_views=6),
+    dict(
+        type='LoadMultiViewImageFromFiles',
+        to_float32=True,
+        num_views=6,
+        backend_args=backend_args),
     dict(
         type='LoadAnnotations3D',
         with_bbox_3d=True,
@@ -143,7 +147,11 @@ train_pipeline = [
 ]
 
 test_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles', to_float32=True, num_views=6),
+    dict(
+        type='LoadMultiViewImageFromFiles',
+        to_float32=True,
+        num_views=6,
+        backend_args=backend_args),
     dict(type='MultiViewWrapper', transforms=test_transforms),
     dict(type='Pack3DDetInputs', keys=['img'])
 ]
@@ -176,7 +184,8 @@ train_dataloader = dict(
         data_prefix=data_prefix,
         # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
         # and box_type_3d='Depth' in sunrgbd and scannet dataset.
-        box_type_3d='LiDAR'))
+        box_type_3d='LiDAR',
+        backend_args=backend_args))
 
 val_dataloader = dict(
     batch_size=1,
@@ -194,7 +203,8 @@ val_dataloader = dict(
         modality=input_modality,
         test_mode=True,
         data_prefix=data_prefix,
-        box_type_3d='LiDAR'))
+        box_type_3d='LiDAR',
+        backend_args=backend_args))
 
 test_dataloader = val_dataloader
 
@@ -202,7 +212,8 @@ val_evaluator = dict(
     type='NuScenesMetric',
     data_root=data_root,
     ann_file=data_root + 'nuscenes_infos_val.pkl',
-    metric='bbox')
+    metric='bbox',
+    backend_args=backend_args)
 test_evaluator = val_evaluator
 
 optim_wrapper = dict(

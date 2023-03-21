@@ -9,8 +9,9 @@ except ImportError:
     raise ImportError('Please run "pip install waymo-open-dataset-tf-2-5-0" '
                       '>1.4.5 to install the official devkit first.')
 
+import os
 from glob import glob
-from os.path import join, exists
+from os.path import exists, join
 
 import os
 import mmengine
@@ -229,8 +230,10 @@ class Waymo2KITTI(object):
         """
         range_images, camera_projections, seg_labels, range_image_top_pose = \
             parse_range_image_and_camera_projection(frame)
-        if range_image_top_pose == None :
-            return 
+
+        if range_image_top_pose is None:
+            # the camera only split doesn't contain lidar points.
+            return
         # First return
         points_0, cp_points_0, intensity_0, elongation_0, mask_indices_0 = \
             self.convert_range_image_to_point_cloud(
@@ -603,9 +606,10 @@ class Waymo2KITTI(object):
             raise ValueError(mat.shape)
         return ret
 
+
 def create_ImageSets_img_ids(root_dir, splits):
     save_dir = join(root_dir, 'ImageSets/')
-    if not exists(save_dir): 
+    if not exists(save_dir):
         os.mkdir(save_dir)
 
     idx_all = [[] for i in splits]
@@ -621,10 +625,10 @@ def create_ImageSets_img_ids(root_dir, splits):
                 idx = name.replace('.txt', '\n')
                 idx_all[int(idx[0])].append(idx)
         idx_all[i].sort()
-    
-    open(save_dir+'train.txt','w').writelines(idx_all[0])
-    open(save_dir+'val.txt','w').writelines(idx_all[1])
-    open(save_dir+'trainval.txt','w').writelines(idx_all[0]+idx_all[1])
-    open(save_dir+'test.txt','w').writelines(idx_all[2])
+
+    open(save_dir + 'train.txt', 'w').writelines(idx_all[0])
+    open(save_dir + 'val.txt', 'w').writelines(idx_all[1])
+    open(save_dir + 'trainval.txt', 'w').writelines(idx_all[0] + idx_all[1])
+    open(save_dir + 'test.txt', 'w').writelines(idx_all[2])
     # open(save_dir+'test_cam_only.txt','w').writelines(idx_all[3])
     print('created txt files indicating what to collect in ', splits)

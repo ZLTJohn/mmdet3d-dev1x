@@ -41,8 +41,8 @@ class Prediction2Waymo(object):
             validation and 2 for testing.
         classes (dict): A list of class name.
         workers (str): Number of parallel processes. Defaults to 2.
-        file_client_args (str): File client for reading gt in waymo format.
-            Defaults to ``dict(backend='disk')``.
+        backend_args (dict, optional): Arguments to instantiate the
+            corresponding backend. Defaults to None.
         from_kitti_format (bool, optional): Whether the reuslts are kitti
             format. Defaults to False.
         idx2metainfo (Optional[dict], optional): The mapping from sample_idx to
@@ -58,7 +58,7 @@ class Prediction2Waymo(object):
                  prefix: str,
                  classes: dict,
                  workers: int = 2,
-                 file_client_args: dict = dict(backend='disk'),
+                 backend_args: Optional[dict] = None,
                  from_kitti_format: bool = False,
                  idx2metainfo: Optional[dict] = None,
                  ann_file: str = None):
@@ -70,7 +70,7 @@ class Prediction2Waymo(object):
         self.prefix = prefix
         self.classes = classes
         self.workers = int(workers)
-        self.file_client_args = file_client_args
+        self.backend_args = backend_args
         self.from_kitti_format = from_kitti_format
 
         self.name2idx = {}
@@ -161,12 +161,12 @@ class Prediction2Waymo(object):
 
     def get_file_names(self):
         """Get file names of waymo raw data."""
-        if 'path_mapping' in self.file_client_args:
-            for path in self.file_client_args['path_mapping'].keys():
+        if 'path_mapping' in self.backend_args:
+            for path in self.backend_args['path_mapping'].keys():
                 if path in self.waymo_tfrecords_dir:
                     self.waymo_tfrecords_dir = \
                         self.waymo_tfrecords_dir.replace(
-                            path, self.file_client_args['path_mapping'][path])
+                            path, self.backend_args['path_mapping'][path])
             from petrel_client.client import Client
             client = Client()
             contents = client.list(self.waymo_tfrecords_dir)
